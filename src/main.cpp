@@ -1,17 +1,17 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <IBusBM.h>
-
+// #include <ServoTimer2.h>
 // ---------------- HARDWARE CONSTANTS ----------------
 #define SWEEP_WIDTH (120)
-#define STEP_ANGLE_SIZE (5)
+#define STEP_ANGLE_SIZE (10)
 #define MAX_PULSE_RETURN_us (20000)
 #define MIN_PULSE_RETURN_us (50)
-#define INITIAL_ANGLE (0)
+#define INITIAL_ANGLE (60)
 #define MIN_ANGLES_TO_REACT (5)
 
 // Non-blocking timings (State Machine Tuning)
-#define SONAR_STEP_INTERVAL_MS (500)  // Safe delay between physical servo steps
+#define SONAR_STEP_INTERVAL_MS (100)  // Safe delay between physical servo steps
 #define SERVO_SETTLE_DELAY_MS (100)   // Delay allowed for physical shaft settling
 
 // Pin allocations
@@ -27,6 +27,7 @@ const int turn_motor_pwm_pin = 6;
 const int move_motor_pwm_pin = 5;
 
 // ---------------- MODULES & OBJECTS ----------------
+// ServoTimer2 sonarServo;
 Servo sonarServo;
 IBusBM ibusRc;
 HardwareSerial& ibusRcSerial = Serial;
@@ -68,7 +69,8 @@ void control_ship_instantaneous(int speed, int dir, int speed_mode, int dir_mode
 void setup() {
   // Initialize communication interfaces
   ibusRcSerial.begin(115200); 
-  ibusRc.begin(ibusRcSerial);
+  // ibusRc.begin(ibusRcSerial);
+  ibusRc.begin(ibusRcSerial, IBUSBM_NOTIMER);
   Serial.begin(115200);
 
   // Configure Hardware I/O Peripheral Modes
@@ -91,11 +93,13 @@ void setup() {
 
   // Home sonar array assembly safely
   sonarServo.attach(servoPin);
+  delay(10);
   sonarServo.write(INITIAL_ANGLE);
-  delay(500); 
+  delay(50); 
 }
 
 void loop() {
+  ibusRc.loop();
   // Sync Nav Trigger condition at the start of loop execution to fix input-lag bugs
   int nav_trig = -readChannel(9, 0, 1, 0) + 1;
 
@@ -187,11 +191,12 @@ void loop() {
     dir_mode = (angle_max_normalized >= 0);
 
     // Motor Speed Control Configurations - TODO: REFINE
-    speed = 45; // Configured drive speed
+    speed = 128; // Configured drive speed
     speed_mode = 0; // Forward drive
   } 
   // ================= BRANCH B: MANUAL REMOTE CONTROL =================
   else { 
+
     int control_speed = readChannel(2, 0, 256, 0);
     int gear_shift = -readChannel(8, 0, 2, 0) + 3;
 
@@ -202,7 +207,7 @@ void loop() {
     dir = abs(raw_dir);
 
     speed = (int)((float)control_speed * ((float)gear_shift / 3.0f));
-    speed_mode = -2*readChannel(6, 0, 1, 0) + 1;
+    speed_mode = -readChannel(6, 0, 1, 0) + 1;
   }
 
   // Pass sanitized values down to propulsion system arrays

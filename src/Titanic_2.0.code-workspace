@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "testing_ground",
+			"path": "../../testing_ground"
+		},
+		{
+			"name": "Burglary",
+			"path": "../../Burglary"
+		}
+	],
+	"settings": {}
+}
