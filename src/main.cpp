@@ -3,12 +3,12 @@
 #include <IBusBM.h>
 // #include <ServoTimer2.h>
 // ---------------- HARDWARE CONSTANTS ----------------
-#define SWEEP_WIDTH (120)
+#define SWEEP_WIDTH (180)
 #define STEP_ANGLE_SIZE (10)
 #define MAX_PULSE_RETURN_us (20000)
 #define MIN_PULSE_RETURN_us (50)
 #define INITIAL_ANGLE (60)
-#define MIN_ANGLES_TO_REACT (5)
+#define MIN_ANGLES_TO_REACT (10)
 
 // Non-blocking timings (State Machine Tuning)
 #define SONAR_STEP_INTERVAL_MS (100)  // Safe delay between physical servo steps
@@ -176,16 +176,15 @@ void loop() {
     }
 
     // Motor Speed Control Configurations - TODO: REFINE
-    int speed = 128; // Configured drive speed
-    // Steering Calculation Adjustments
+    int speed = 128; // Configured drive speed -
     float angle_max_normalized = angle_max - INITIAL_ANGLE - ((float)SWEEP_WIDTH / 2.0f);
     int raw_dir = 0;
     if (angle_max_normalized < -MIN_ANGLES_TO_REACT || angle_max_normalized > MIN_ANGLES_TO_REACT) {
-      raw_dir = (int)(angle_max_normalized); 
+      raw_dir = map((long)(angle_max_normalized), -90, 90, -speed, speed);
     }
     if(raw_dir<0){
       r = speed;
-      l = speed + raw_dir;
+      l = speed - raw_dir;
     }
     else{
       r = speed - raw_dir;
@@ -204,7 +203,7 @@ void loop() {
     
     if(raw_dir<0){
       r = speed;
-      l = speed + raw_dir;
+      l = speed - raw_dir;
     }
     else{
       r = speed - raw_dir;
