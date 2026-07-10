@@ -19,12 +19,12 @@ const int trigPin = 3;
 const int echoPin = 2; // Interrupt pin 
 const int servoPin = 4; 
 
-const int turn_motor_r_pin = 12;
-const int turn_motor_l_pin = 13;
-const int move_motor_fwd_pin = 7;
-const int move_motor_bwd_pin = 8;
-const int turn_motor_pwm_pin = 6;
-const int move_motor_pwm_pin = 5;
+const int right_motor_r_pin = 12;
+const int right_motor_l_pin = 13;
+const int left_motor_r_pin = 7;
+const int left_motor_l_pin = 8;
+const int right_motor_pwm_pin = 6;
+const int left_motor_pwm_pin = 5;
 
 // ---------------- MODULES & OBJECTS ----------------
 // ServoTimer2 sonarServo;
@@ -62,7 +62,7 @@ float angle_max = INITIAL_ANGLE;
 void echoISR();
 int argmax(const float* arr, int len);
 int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue);
-void control_ship_instantaneous(int speed, int dir, int speed_mode, int dir_mode);
+void control_ship_instantaneous(int r, int l);
 
 // ---------------- CORE ARCHITECTURE ----------------
 
@@ -76,12 +76,12 @@ void setup() {
   // Configure Hardware I/O Peripheral Modes
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
-  pinMode(turn_motor_l_pin, OUTPUT);
-  pinMode(turn_motor_r_pin, OUTPUT);
-  pinMode(move_motor_fwd_pin, OUTPUT);
-  pinMode(move_motor_bwd_pin, OUTPUT);
-  pinMode(move_motor_pwm_pin, OUTPUT);
-  pinMode(turn_motor_pwm_pin, OUTPUT);
+  pinMode(right_motor_l_pin, OUTPUT);
+  pinMode(right_motor_r_pin, OUTPUT);
+  pinMode(left_motor_r_pin, OUTPUT);
+  pinMode(left_motor_l_pin, OUTPUT);
+  pinMode(left_motor_pwm_pin, OUTPUT);
+  pinMode(right_motor_pwm_pin, OUTPUT);
 
   // Initialize distance mapping registry to prevent processing unallocated garbage memory
   for (int i = 0; i < angles_size; i++) {
@@ -102,12 +102,8 @@ void loop() {
   ibusRc.loop();
   // Sync Nav Trigger condition at the start of loop execution to fix input-lag bugs
   int nav_trig = -readChannel(9, 0, 1, 0) + 1;
-
-  int dir = 0;
-  int speed = 0;
-  int speed_mode = 0;
-  int dir_mode = 0;
-
+  int r = 0;
+  int l = 0;
   // ================= BRANCH A: AUTONOMOUS NAVIGATION =================
   if (nav_trig == 0) { 
     unsigned long currentMillis = millis();
@@ -179,39 +175,46 @@ void loop() {
       distances_per_angles[sampleAngle_index] = sample_distance;
     }
 
+    // Motor Speed Control Configurations - TODO: REFINE
+    int speed = 128; // Configured drive speed
     // Steering Calculation Adjustments
     float angle_max_normalized = angle_max - INITIAL_ANGLE - ((float)SWEEP_WIDTH / 2.0f);
-    
-    if (angle_max_normalized > -MIN_ANGLES_TO_REACT && angle_max_normalized < MIN_ANGLES_TO_REACT) {
-      dir = 0;
-    } else {
-      // Maps localized angular divergence directly to absolute positive turning metrics
-      dir = abs((int)(angle_max_normalized / 10.0f)) * 40; 
+    int raw_dir = 0;
+    if (angle_max_normalized < -MIN_ANGLES_TO_REACT || angle_max_normalized > MIN_ANGLES_TO_REACT) {
+      raw_dir = (int)(angle_max_normalized); 
     }
-    dir_mode = (angle_max_normalized >= 0);
+    if(raw_dir<0){
+      r = speed;
+      l = speed + raw_dir;
+    }
+    else{
+      r = speed - raw_dir;
+      l = speed;
+    }
 
-    // Motor Speed Control Configurations - TODO: REFINE
-    speed = 128; // Configured drive speed
-    speed_mode = 0; // Forward drive
   } 
   // ================= BRANCH B: MANUAL REMOTE CONTROL =================
   else { 
 
     int control_speed = readChannel(2, 0, 256, 0);
     int gear_shift = -readChannel(8, 0, 2, 0) + 3;
-
-    int raw_dir = readChannel(0, -256, 256, 0);
-    dir_mode = (raw_dir >= 0);
+    int speed_mode = -readChannel(6, 0, 2, 0) + 1;
+    int speed = speed_mode * (int)((float)control_speed * ((float)gear_shift / 3.0f));
+    int raw_dir = readChannel(0, -speed, speed, 0) ;
     
-    // Decouple signed direction flags cleanly from their absolute scaling value
-    dir = abs(raw_dir);
+    if(raw_dir<0){
+      r = speed;
+      l = speed + raw_dir;
+    }
+    else{
+      r = speed - raw_dir;
+      l = speed;
+    }
 
-    speed = (int)((float)control_speed * ((float)gear_shift / 3.0f));
-    speed_mode = -readChannel(6, 0, 1, 0) + 1;
   }
 
   // Pass sanitized values down to propulsion system arrays
-  control_ship_instantaneous(speed, dir, speed_mode, dir_mode);
+  control_ship_instantaneous(r,l);
 }
 
 // ---------------- HARDWARE PERIPHERALS & UTILS ----------------
@@ -243,26 +246,27 @@ int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue)
   return map(ch, 1000, 2000, minLimit, maxLimit);
 }
 
-void control_ship_instantaneous(int speed0, int dir0, int speed_mode0, int dir_mode0) {
-  // Constrain parameters to standard 8-bit dynamic resolution range
-  speed0 = constrain(speed0, 0, 255);
-  dir0 = constrain(dir0, 0, 255);
+void control_ship_instantaneous(int r, int l) {
 
-  analogWrite(turn_motor_pwm_pin, dir0);
-  if (dir_mode0) {
-    digitalWrite(turn_motor_r_pin, LOW);
-    digitalWrite(turn_motor_l_pin, HIGH);
+  //check input.
+  r = constrain(r, -255, 255);
+  l = constrain(l, -255, 255);
+
+  analogWrite(right_motor_pwm_pin, abs(r));
+  if (r<0) {
+    digitalWrite(right_motor_r_pin, LOW);
+    digitalWrite(right_motor_l_pin, HIGH);
   } else {
-    digitalWrite(turn_motor_r_pin, HIGH);
-    digitalWrite(turn_motor_l_pin, LOW);
+    digitalWrite(right_motor_r_pin, HIGH);
+    digitalWrite(right_motor_l_pin, LOW);
   }
 
-  analogWrite(move_motor_pwm_pin, speed0);
-  if (speed_mode0) {
-    digitalWrite(move_motor_fwd_pin, LOW);
-    digitalWrite(move_motor_bwd_pin, HIGH);
+  analogWrite(left_motor_pwm_pin, abs(l));
+  if (l>0) {
+    digitalWrite(left_motor_r_pin, LOW);
+    digitalWrite(left_motor_l_pin, HIGH);
   } else {
-    digitalWrite(move_motor_bwd_pin, LOW);
-    digitalWrite(move_motor_fwd_pin, HIGH);
+    digitalWrite(left_motor_l_pin, LOW);
+    digitalWrite(left_motor_r_pin, HIGH);
   }
 }
