@@ -7,7 +7,7 @@
 #define STEP_ANGLE_SIZE (10)
 #define MAX_PULSE_RETURN_us (20000)
 #define MIN_PULSE_RETURN_us (50)
-#define INITIAL_ANGLE (60)
+#define INITIAL_ANGLE (0)
 #define MIN_ANGLES_TO_REACT (10)
 
 // Non-blocking timings (State Machine Tuning)
@@ -180,11 +180,11 @@ void loop() {
     float angle_max_normalized = angle_max - INITIAL_ANGLE - ((float)SWEEP_WIDTH / 2.0f);
     int raw_dir = 0;
     if (angle_max_normalized < -MIN_ANGLES_TO_REACT || angle_max_normalized > MIN_ANGLES_TO_REACT) {
-      raw_dir = map((long)(angle_max_normalized), -90, 90, -speed, speed);
+      raw_dir = map((long)(angle_max_normalized), -SWEEP_WIDTH/2, SWEEP_WIDTH/2, -speed, speed);
     }
     if(raw_dir<0){
       r = speed;
-      l = speed - raw_dir;
+      l = speed + raw_dir;
     }
     else{
       r = speed - raw_dir;
@@ -203,7 +203,7 @@ void loop() {
     
     if(raw_dir<0){
       r = speed;
-      l = speed - raw_dir;
+      l = speed + raw_dir;
     }
     else{
       r = speed - raw_dir;
