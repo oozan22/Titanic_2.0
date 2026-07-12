@@ -14,6 +14,8 @@
 #define SONAR_STEP_INTERVAL_MS (100)  // Safe delay between physical servo steps
 #define SERVO_SETTLE_DELAY_MS (100)   // Delay allowed for physical shaft settling
 
+#define PUMP_DURATION_MS (2000)
+
 // Pin allocations
 const int trigPin = 3;
 const int echoPin = 2; // Interrupt pin 
@@ -26,9 +28,13 @@ const int left_motor_l_pin = 8;
 const int right_motor_pwm_pin = 6;
 const int left_motor_pwm_pin = 5;
 
+const int pump_pin = 10;
+const int rescue_servo_pin = 11;
+
 // ---------------- MODULES & OBJECTS ----------------
 // ServoTimer2 sonarServo;
 Servo sonarServo;
+Servo rescueServo;
 IBusBM ibusRc;
 HardwareSerial& ibusRcSerial = Serial;
 
@@ -58,6 +64,9 @@ unsigned long servo_move_timestamp = 0;
 
 float angle_max = INITIAL_ANGLE;
 
+unsigned long pump_start_time = 0;
+
+int pump_flag = 1;
 // ---------------- SYSTEM PROTOTYPES ----------------
 void echoISR();
 int argmax(const float* arr, int len);
@@ -83,6 +92,11 @@ void setup() {
   pinMode(left_motor_pwm_pin, OUTPUT);
   pinMode(right_motor_pwm_pin, OUTPUT);
 
+  pinMode(pump_pin, OUTPUT);
+  rescueServo.attach(rescue_servo_pin);
+  delay(10);
+  rescueServo.write(0);
+  delay(50);
   // Initialize distance mapping registry to prevent processing unallocated garbage memory
   for (int i = 0; i < angles_size; i++) {
     distances_per_angles[i] = 3.43f; // Default baseline to clear obstacles
@@ -214,6 +228,19 @@ void loop() {
 
  //control ship
   control_ship_instantaneous(r,l);
+
+  int resc_raise_angle = readChannel(6, 0, 30, 0);
+  int pump_on = readChannel(7, 0, 1, 0);
+
+  rescueServo.write(resc_raise_angle);
+  if (pump_on==1 && pump_flag==1) {
+    digitalWrite(pump_pin, HIGH);
+    pump_start_time = millis();
+    pump_flag = 0;
+  }
+  if (pump_flag == 0 && millis() - pump_start_time > PUMP_DURATION_MS) {
+    digitalWrite(pump_pin, LOW);
+  }
 }
 
 // ---------------- HARDWARE PERIPHERALS & UTILS ----------------
