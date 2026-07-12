@@ -215,14 +215,27 @@ void loop() {
     int speed = speed_mode * (int)((float)control_speed * ((float)gear_shift / 3.0f));
     int raw_dir = readChannel(0, -speed, speed, 0) ;
     
-    if(raw_dir<0){
-      r = speed;
-      l = speed + raw_dir;
+    if(speed_mode>0){
+      if(raw_dir<0){
+        r = speed;
+        l = speed + raw_dir;
+      }
+      else{
+        r = speed - raw_dir;
+        l = speed;
+      }
     }
     else{
-      r = speed - raw_dir;
-      l = speed;
+      if(raw_dir<0){
+        r = speed;
+        l = speed - raw_dir;
+      }
+      else{
+        r = speed + raw_dir;
+        l = speed;
+      }
     }
+    
 
   }
 
