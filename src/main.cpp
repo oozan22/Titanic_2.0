@@ -212,7 +212,7 @@ void loop() {
 
   }
 
-  // Pass sanitized values down to propulsion system arrays
+ //control ship
   control_ship_instantaneous(r,l);
 }
 
