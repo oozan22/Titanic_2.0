@@ -19,16 +19,22 @@ const int trigPin = 3;
 const int echoPin = 2; // Interrupt pin 
 const int servoPin = 4; 
 
-const int right_motor_r_pin = 12;
-const int right_motor_l_pin = 13;
-const int left_motor_r_pin = 7;
-const int left_motor_l_pin = 8;
-const int right_motor_pwm_pin = 6;
-const int left_motor_pwm_pin = 5;
+// const int right_motor_r_pin = 12;
+// const int right_motor_l_pin = 13;
+// const int left_motor_r_pin = 7;
+// const int left_motor_l_pin = 8;
+// const int right_motor_pwm_pin = 6;
+// const int left_motor_pwm_pin = 5;
 
+const int jet_fwd_pin = 88;
+const int jet_rev_pin = 89;
+const int jet_pwm_pin = 90;
+const int jet_dir_pwm_pin = 92;
+const int jet_dir_servo_pin = 93;
 // ---------------- MODULES & OBJECTS ----------------
 // ServoTimer2 sonarServo;
 Servo sonarServo;
+Servo jetServo;
 IBusBM ibusRc;
 HardwareSerial& ibusRcSerial = Serial;
 
@@ -62,39 +68,45 @@ float angle_max = INITIAL_ANGLE;
 void echoISR();
 int argmax(const float* arr, int len);
 int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue);
-void control_ship_instantaneous(int r, int l);
-
+void control_ship_instantaneous_katamaran(int r, int l);
+void control_ship_instantaneous_jet(int speed0,int dir0);
 // ---------------- CORE ARCHITECTURE ----------------
 
 void setup() {
-  // Initialize communication interfaces
+
   ibusRcSerial.begin(115200); 
-  // ibusRc.begin(ibusRcSerial);
   ibusRc.begin(ibusRcSerial, IBUSBM_NOTIMER);
   Serial.begin(115200);
-
-  // Configure Hardware I/O Peripheral Modes
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
-  pinMode(right_motor_l_pin, OUTPUT);
-  pinMode(right_motor_r_pin, OUTPUT);
-  pinMode(left_motor_r_pin, OUTPUT);
-  pinMode(left_motor_l_pin, OUTPUT);
-  pinMode(left_motor_pwm_pin, OUTPUT);
-  pinMode(right_motor_pwm_pin, OUTPUT);
 
-  // Initialize distance mapping registry to prevent processing unallocated garbage memory
+  // pinMode(right_motor_l_pin, OUTPUT);
+  // pinMode(right_motor_r_pin, OUTPUT);
+  // pinMode(left_motor_r_pin, OUTPUT);
+  // pinMode(left_motor_l_pin, OUTPUT);
+  // pinMode(left_motor_pwm_pin, OUTPUT);
+  // pinMode(right_motor_pwm_pin, OUTPUT);
+
+  pinMode(jet_fwd_pin, OUTPUT);
+  pinMode(jet_rev_pin, OUTPUT);
+  pinMode(jet_pwm_pin, OUTPUT);
+  pinMode(jet_dir_pwm_pin, OUTPUT);
+
+  // Initialize distance mapping 
   for (int i = 0; i < angles_size; i++) {
     distances_per_angles[i] = 3.43f; // Default baseline to clear obstacles
   }
 
-  // Bind low-latency change state interrupt to echo pin
   attachInterrupt(digitalPinToInterrupt(echoPin), echoISR, CHANGE);
 
-  // Home sonar array assembly safely
   sonarServo.attach(servoPin);
   delay(10);
   sonarServo.write(INITIAL_ANGLE);
+  delay(50); 
+
+  jetServo.attach(jet_dir_servo_pin);
+  delay(10);
+  jetServo.write(0);
   delay(50); 
 }
 
@@ -102,8 +114,11 @@ void loop() {
   ibusRc.loop();
   // Sync Nav Trigger condition at the start of loop execution to fix input-lag bugs
   int nav_trig = -readChannel(9, 0, 1, 0) + 1;
-  int r = 0;
-  int l = 0;
+
+  int jet_speed = 0;
+  int jet_dir = 0;
+  // int r = 0;
+  // int l = 0;
   // ================= BRANCH A: AUTONOMOUS NAVIGATION =================
   if (nav_trig == 0) { 
     unsigned long currentMillis = millis();
@@ -182,14 +197,16 @@ void loop() {
     if (angle_max_normalized < -MIN_ANGLES_TO_REACT || angle_max_normalized > MIN_ANGLES_TO_REACT) {
       raw_dir = map((long)(angle_max_normalized), -SWEEP_WIDTH/2, SWEEP_WIDTH/2, -speed, speed);
     }
-    if(raw_dir<0){
-      r = speed;
-      l = speed + raw_dir;
-    }
-    else{
-      r = speed - raw_dir;
-      l = speed;
-    }
+    jet_speed = speed;
+    jet_dir = raw_dir;
+    // if(raw_dir<0){
+    //   r = speed;
+    //   l = speed + raw_dir;
+    // }
+    // else{
+    //   r = speed - raw_dir;
+    //   l = speed;
+    // }
 
   } 
   // ================= BRANCH B: MANUAL REMOTE CONTROL =================
@@ -200,20 +217,22 @@ void loop() {
     int speed_mode = -readChannel(6, 0, 2, 0) + 1;
     int speed = speed_mode * (int)((float)control_speed * ((float)gear_shift / 3.0f));
     int raw_dir = readChannel(0, -speed, speed, 0) ;
-    
-    if(raw_dir<0){
-      r = speed;
-      l = speed + raw_dir;
-    }
-    else{
-      r = speed - raw_dir;
-      l = speed;
-    }
+    jet_speed = speed;
+    jet_dir = raw_dir;
+    // if(raw_dir<0){
+    //   r = speed;
+    //   l = speed + raw_dir;
+    // }
+    // else{
+    //   r = speed - raw_dir;
+    //   l = speed;
+    // }
 
   }
 
  //control ship
-  control_ship_instantaneous(r,l);
+  // control_ship_instantaneous_katamaran(r,l);
+  control_ship_instantaneous_jet(jet_speed,jet_dir);
 }
 
 // ---------------- HARDWARE PERIPHERALS & UTILS ----------------
@@ -245,27 +264,52 @@ int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue)
   return map(ch, 1000, 2000, minLimit, maxLimit);
 }
 
-void control_ship_instantaneous(int r, int l) {
+// void control_ship_instantaneous_katamaran(int r, int l) {
 
-  //check input.
-  r = constrain(r, -255, 255);
-  l = constrain(l, -255, 255);
+//   //check input.
+//   r = constrain(r, -255, 255);
+//   l = constrain(l, -255, 255);
 
-  analogWrite(right_motor_pwm_pin, abs(r));
-  if (r<0) {
-    digitalWrite(right_motor_r_pin, LOW);
-    digitalWrite(right_motor_l_pin, HIGH);
+//   analogWrite(right_motor_pwm_pin, abs(r));
+//   if (r<0) {
+//     digitalWrite(right_motor_r_pin, LOW);
+//     digitalWrite(right_motor_l_pin, HIGH);
+//   } else {
+//     digitalWrite(right_motor_r_pin, HIGH);
+//     digitalWrite(right_motor_l_pin, LOW);
+//   }
+
+//   analogWrite(left_motor_pwm_pin, abs(l));
+//   if (l>0) {
+//     digitalWrite(left_motor_r_pin, LOW);
+//     digitalWrite(left_motor_l_pin, HIGH);
+//   } else {
+//     digitalWrite(left_motor_l_pin, LOW);
+//     digitalWrite(left_motor_r_pin, HIGH);
+//   }
+// }
+void control_ship_instantaneous_jet(int speed0,int dir0){
+  
+  // Constrain parameters to standard 8-bit dynamic resolution range
+  speed0 = constrain(speed0, -255, 255);
+  dir0 = constrain(dir0, -255, 255);
+
+  analogWrite(jet_pwm_pin, speed0);
+  if (speed0>0) {
+    digitalWrite(jet_fwd_pin, HIGH);
+    digitalWrite(jet_rev_pin, LOW);
   } else {
-    digitalWrite(right_motor_r_pin, HIGH);
-    digitalWrite(right_motor_l_pin, LOW);
+    digitalWrite(jet_fwd_pin, LOW);
+    digitalWrite(jet_rev_pin, HIGH);
   }
 
-  analogWrite(left_motor_pwm_pin, abs(l));
-  if (l>0) {
-    digitalWrite(left_motor_r_pin, LOW);
-    digitalWrite(left_motor_l_pin, HIGH);
-  } else {
-    digitalWrite(left_motor_l_pin, LOW);
-    digitalWrite(left_motor_r_pin, HIGH);
+  if (dir0>0) {
+    jetServo.write(180);
+    
+  } else if (dir0<0) {
+    jetServo.write(0);
+
   }
+  analogWrite(jet_dir_pwm_pin, abs(dir0));
+
 }
