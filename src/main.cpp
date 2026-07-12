@@ -220,8 +220,8 @@ void loop() {
   
   control_ship_instantaneous_jet(jet_speed,jet_dir);
 
-  int resc_raise_angle = readChannel(6, 0, 30, 0);
-  int pump_on = readChannel(7, 0, 1, 0);
+  int resc_raise_angle = readChannel(5, 0, 30, 0);
+  int pump_on = readChannel(6, 0, 1, 0);
 
   rescuseServo.write(resc_raise_angle);
   if (pump_on==1 && pump_flag==1) {
