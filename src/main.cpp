@@ -14,27 +14,27 @@
 #define SONAR_STEP_INTERVAL_MS (100)  // Safe delay between physical servo steps
 #define SERVO_SETTLE_DELAY_MS (100)   // Delay allowed for physical shaft settling
 
+#define PUMP_DURATION_MS (2000)
+
 // Pin allocations
 const int trigPin = 3;
 const int echoPin = 2; // Interrupt pin 
 const int servoPin = 4; 
 
-// const int right_motor_r_pin = 12;
-// const int right_motor_l_pin = 13;
-// const int left_motor_r_pin = 7;
-// const int left_motor_l_pin = 8;
-// const int right_motor_pwm_pin = 6;
-// const int left_motor_pwm_pin = 5;
+const int jet_fwd_pin = 12;
+const int jet_rev_pin = 13;
+const int jet_pwm_pin = 7;
+const int jet_dir_pwm_pin = 8;
+const int jet_dir_servo_pin = 9;
 
-const int jet_fwd_pin = 88;
-const int jet_rev_pin = 89;
-const int jet_pwm_pin = 90;
-const int jet_dir_pwm_pin = 92;
-const int jet_dir_servo_pin = 93;
+const int pump_pin = 10;
+const int rescuse_servo_pin = 11;
+
 // ---------------- MODULES & OBJECTS ----------------
 // ServoTimer2 sonarServo;
 Servo sonarServo;
 Servo jetServo;
+Servo rescuseServo;
 IBusBM ibusRc;
 HardwareSerial& ibusRcSerial = Serial;
 
@@ -61,14 +61,15 @@ int step_angle_index_signed = 1; // 1 = Forward index loop, -1 = Backward loop
 
 unsigned long last_sonar_step_millis = 0;
 unsigned long servo_move_timestamp = 0;
+unsigned long pump_start_time = 0;
 
 float angle_max = INITIAL_ANGLE;
 
+int pump_flag = 1;
 // ---------------- SYSTEM PROTOTYPES ----------------
 void echoISR();
 int argmax(const float* arr, int len);
 int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue);
-void control_ship_instantaneous_katamaran(int r, int l);
 void control_ship_instantaneous_jet(int speed0,int dir0);
 // ---------------- CORE ARCHITECTURE ----------------
 
@@ -80,17 +81,11 @@ void setup() {
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
 
-  // pinMode(right_motor_l_pin, OUTPUT);
-  // pinMode(right_motor_r_pin, OUTPUT);
-  // pinMode(left_motor_r_pin, OUTPUT);
-  // pinMode(left_motor_l_pin, OUTPUT);
-  // pinMode(left_motor_pwm_pin, OUTPUT);
-  // pinMode(right_motor_pwm_pin, OUTPUT);
-
   pinMode(jet_fwd_pin, OUTPUT);
   pinMode(jet_rev_pin, OUTPUT);
   pinMode(jet_pwm_pin, OUTPUT);
   pinMode(jet_dir_pwm_pin, OUTPUT);
+  pinMode(pump_pin, OUTPUT);
 
   // Initialize distance mapping 
   for (int i = 0; i < angles_size; i++) {
@@ -108,6 +103,11 @@ void setup() {
   delay(10);
   jetServo.write(0);
   delay(50); 
+
+  rescuseServo.attach(rescuse_servo_pin);
+  delay(10);
+  rescuseServo.write(0);
+  delay(50);
 }
 
 void loop() {
@@ -199,14 +199,7 @@ void loop() {
     }
     jet_speed = speed;
     jet_dir = raw_dir;
-    // if(raw_dir<0){
-    //   r = speed;
-    //   l = speed + raw_dir;
-    // }
-    // else{
-    //   r = speed - raw_dir;
-    //   l = speed;
-    // }
+
 
   } 
   // ================= BRANCH B: MANUAL REMOTE CONTROL =================
@@ -219,20 +212,26 @@ void loop() {
     int raw_dir = readChannel(0, -speed, speed, 0) ;
     jet_speed = speed;
     jet_dir = raw_dir;
-    // if(raw_dir<0){
-    //   r = speed;
-    //   l = speed + raw_dir;
-    // }
-    // else{
-    //   r = speed - raw_dir;
-    //   l = speed;
-    // }
+
 
   }
 
  //control ship
-  // control_ship_instantaneous_katamaran(r,l);
+  
   control_ship_instantaneous_jet(jet_speed,jet_dir);
+
+  int resc_raise_angle = readChannel(6, 0, 30, 0);
+  int pump_on = readChannel(7, 0, 1, 0);
+
+  rescuseServo.write(resc_raise_angle);
+  if (pump_on==1 && pump_flag==1) {
+    digitalWrite(pump_pin, HIGH);
+    pump_start_time = millis();
+    pump_flag = 0;
+  }
+  if (pump_flag == 0 && millis() - pump_start_time > PUMP_DURATION_MS) {
+    digitalWrite(pump_pin, LOW);
+  }
 }
 
 // ---------------- HARDWARE PERIPHERALS & UTILS ----------------
@@ -264,30 +263,7 @@ int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue)
   return map(ch, 1000, 2000, minLimit, maxLimit);
 }
 
-// void control_ship_instantaneous_katamaran(int r, int l) {
 
-//   //check input.
-//   r = constrain(r, -255, 255);
-//   l = constrain(l, -255, 255);
-
-//   analogWrite(right_motor_pwm_pin, abs(r));
-//   if (r<0) {
-//     digitalWrite(right_motor_r_pin, LOW);
-//     digitalWrite(right_motor_l_pin, HIGH);
-//   } else {
-//     digitalWrite(right_motor_r_pin, HIGH);
-//     digitalWrite(right_motor_l_pin, LOW);
-//   }
-
-//   analogWrite(left_motor_pwm_pin, abs(l));
-//   if (l>0) {
-//     digitalWrite(left_motor_r_pin, LOW);
-//     digitalWrite(left_motor_l_pin, HIGH);
-//   } else {
-//     digitalWrite(left_motor_l_pin, LOW);
-//     digitalWrite(left_motor_r_pin, HIGH);
-//   }
-// }
 void control_ship_instantaneous_jet(int speed0,int dir0){
   
   // Constrain parameters to standard 8-bit dynamic resolution range
