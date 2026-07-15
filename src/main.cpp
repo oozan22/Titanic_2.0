@@ -1,9 +1,8 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <IBusBM.h>
-// #include <ServoTimer2.h>
 // ---------------- HARDWARE CONSTANTS ----------------
-#define SWEEP_WIDTH (90)
+#define SWEEP_WIDTH (135)
 #define STEP_ANGLE_SIZE (15)
 #define MAX_PULSE_RETURN_us (20000)
 #define MIN_PULSE_RETURN_us (100)
@@ -14,10 +13,13 @@
 #define BACK_SERVO_INIT_ANGLE (95)
 
 // Non-blocking timings (State Machine Tuning)
-#define SONAR_STEP_INTERVAL_MS (200)  // Safe delay between physical servo steps
+#define SONAR_STEP_INTERVAL_MS (100)  // Safe delay between physical servo steps
 #define SERVO_SETTLE_DELAY_MS (100)   // Delay allowed for physical shaft settling
 
 #define PUMP_DURATION_MS (2000)
+
+
+// constexpr float OBSTACLE_DIST_THRESHOLD = 0.07f; // 7cm
 
 // Pin allocations
 const int trigPin = 3;
@@ -140,23 +142,22 @@ void loop() {
         if (currentMillis - last_sonar_step_millis >= SONAR_STEP_INTERVAL_MS) {
           last_sonar_step_millis = currentMillis;
 
-          // Compute max environmental range data vector when completing sweeping thresholds
           if (currentAngle_index == 0 || currentAngle_index >= angles_size - 1) { 
             float window[3] = {1.0f/3.0f, 1.0f/3.0f, 1.0f/3.0f};
             
-            // Create the destination array here
             float conved_arr_same[angles_size];
             
-            // Pass the destination array directly into the function
             conv_same(distances_per_angles, window, angles_size, 3, conved_arr_same);
-            
+            conved_arr_same[0] = 0;
+            conved_arr_same[angles_size - 1] = 0;
+              
+
             //def_val : middle angle
             angle_max = (float)argmax(conved_arr_same, angles_size, (int)(angles_size/2)) * STEP_ANGLE_SIZE + INITIAL_ANGLE;
             Serial.print("Target Vector Sweep Max Angle: ");
             Serial.println(angle_max);
 
-            Serial.println("angles_arr:");
-            print_arr(distances_per_angles, angles_size);
+
 
             Serial.println("angles_conved:");
             print_arr(conved_arr_same, angles_size);
@@ -225,7 +226,7 @@ void loop() {
       raw_dir = (long)(angle_max_normalized);
     }
     if (raw_dir!=0){
-      jet_speed = constrain(abs(speed/raw_dir)*200, 0, 255);
+      jet_speed = constrain(max(abs(speed/raw_dir),1)*150, 0, 255);
     }
     else{
       jet_speed = speed;
@@ -251,7 +252,7 @@ void loop() {
   
   control_ship_instantaneous_jet(jet_speed,jet_dir);
 
-  int resc_raise_angle = readChannel(5, 0, 30, 0);
+  int resc_raise_angle = readChannel(5, 0, 50, 0);
   int pump_on = readChannel(4, 0, 1, 0);
 
   rescuseServo.write(resc_raise_angle);
